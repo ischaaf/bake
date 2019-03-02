@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+bake_task task.1 "simple task"
+function task.1 () {
+  echo "you ran a task!"
+}
+
+bake_task task.2 "pass me some args"
+function task.2 () {
+  echo "You passed: $*"
+}
+
+bake_task remove.bakefile "move the bakefile to test when no file exists"
+function remove.bakefile () {
+  echo "To restore Bakefile run:"
+  echo "mv Bakefile{.bak,}"
+  mv Bakefile{,.bak}
+}
