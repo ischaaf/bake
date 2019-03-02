@@ -4,7 +4,7 @@ set -Eeu -o pipefail
 
 
 # TODO: detect if we're being sourced or if we're being executed
-BAKE_VERSION="2014-11-05"
+BAKE_VERSION="2019-03-01"
 BAKE_STDOUT_IS_TERMINAL=""
 BAKE_COLOR_NORMAL=""
 BAKE_COLOR_RED=""
@@ -39,12 +39,8 @@ BAKEPATH="${BAKEPATH:-}"
 BAKE_PACKAGES_PATH="$HOME/.bake/packages"
 
 BAKE_DEFAULT_TASK=""
-BAKE_TASK_SEP="-"
 declare -A BAKE_TASKS
-declare -A BAKE_SUPERTASKS
-declare -A BAKE_SUBTASKS
 declare -A BAKE_TASK_DESCRIPTIONS
-declare -A BAKE_SUPERTASK_DESCRIPTIONS
 declare -A BAKE_LIBS
 
 function bake_push_libdir () {
@@ -282,48 +278,11 @@ function bake_task_alias () {
   BAKE_TASK_DESCRIPTIONS[$name]="$short_desc"
 }
 
-function bake_subtask () {
-  local supertask_name="${1:-}"
-  local subtask_name="${2:-}"
-  local short_desc="${3:-No Description for task: $supertask_name $subtask_name}"
-
-  if [ -z "$supertask_name" ]; then
-    bake_log_fatal "you must supply a [super] task name!"
-    return 1
-  fi
-
-  if [ -z "$subtask_name" ]; then
-    bake_log_fatal "you must supply a [sub] task name!"
-    return 1
-  fi
-
-  local tname="$supertask_name$BAKE_TASK_SEP$subtask_name"
-  BAKE_TASKS[$tname]="$tname"
-  BAKE_SUPERTASKS[$supertask_name]="$supertask_name"
-  BAKE_SUBTASKS[$tname]="$tname"
-  BAKE_TASK_DESCRIPTIONS[$tname]="$short_desc"
-}
-
-function bake_supertask () {
-  local supertask_name="${1:-}"
-  local short_desc="${2:-No Description for task: $supertask_name}"
-
-  if [ -z "$supertask_name" ]; then
-    bake_log_fatal "you must supply a [super] task name!"
-    return 1
-  fi
-
-  BAKE_SUPERTASKS[$supertask_name]="$supertask_name"
-  BAKE_SUPERTASK_DESCRIPTIONS[$supertask_name]="$short_desc"
-}
-
 function bake_task_short_desc () {
   local name="${1:-}"
   local descr
   descr="$(echo "${BAKE_TASK_DESCRIPTIONS[$name]:-}" | head -n 1)"
-  if [ -z "$descr" ]; then
-    echo "${BAKE_SUPERTASK_DESCRIPTIONS[$name]:-}" | head -n 1
-  else
+  if [ -n "$descr" ]; then
     echo "$descr" | head -n 1
   fi
 }
@@ -334,28 +293,8 @@ function bake_task_function () {
   echo "$value"
 }
 
-function bake_subtask_function () {
-  local name="$1"
-  local value="${BAKE_SUBTASKS[$name]:-}"
-  echo "$value"
-}
-
-function bake_supertask_function () {
-  local name="$1"
-  local value="${BAKE_SUPERTASKS[$name]:-}"
-  echo "$value"
-}
-
 function bake_is_registered_task () {
   test -n "$(bake_task_function "$1")"
-}
-
-function bake_is_registered_subtask () {
-  test -n "$(bake_subtask_function "$1")"
-}
-
-function bake_is_registered_supertask () {
-  test -n "$(bake_supertask_function "$1")"
 }
 
 function bake_cd () {
@@ -389,14 +328,7 @@ function bake_find_bakefile_impl () {
     echo "$project_root/Bake"
     return 0
   fi
-
-  if [ "/" = "$(pwd)" ]; then
-    echo ""
-    return 1;
-  fi
-
-  cd ..
-  bake_find_bakefile_impl
+  return 1
 }
 
 function bake_find_bakefile () {
@@ -411,39 +343,42 @@ function bake_find_bakefile () {
   cd "$start_path" > /dev/null 2>&1
 }
 
-function bake_inernal_help () {
-  echo "$0 task [arg ...]"
+function bake_internal_help () {
+  echo "Pure bash automation tool. b[ash] [m]ake"
+  echo "Tasks are taken from the file Bakefile (or bakefile) in the PWD."
   echo ""
-  echo "Hi there!  Tasks are taken from the file Bakefile (or bakefile) in the $PWD."
-  echo "You can specify an alternate Bakefile by setting BAKEFILE:"
+  echo "USAGE:"
+  echo "    $0 [options] [task]"
   echo ""
-  echo "  BAKEFILE=\"my.Bakefile\" bake"
+  echo "ENVIRONMENT OPTIONS:"
+  echo "    BAKEFILE=\"my.Bakefile\"         Set an alternate Bakefile"
+  echo "    BAKE_LOG_LEVEL=\"5\"             Set the log level for bake (1=fatal, 5=debug)"
+  echo "    BAKEPATH=\"~/my.bake.scripts/\"  Colon delimited path for looking up files used by bake_require"
   echo ""
-  echo "The internal commands that bake supports are:"
+  echo "OPTIONS:"
+  echo "    -c, --command <command>  Execute interal bake command"
+  echo "    -h, --help               Print this help message"
+  echo "    --complete <task>        Print completions for task"
   echo ""
-  echo "   init        Creates a skeleton Bakefile"
-  echo "   update      Updates libraries (see ~/.bake)."
-  echo "   upgrade     Refreshes bake itself."
-  echo "   version     Show the version of bake!"
+  echo "The interal commands (-c, --command) that bake supports are:"
+  echo "    init        Creates a skeleton Bakefile"
+  echo "    update      Updates libraries (see ~/.bake)."
+  echo "    upgrade     Refreshes bake itself."
+  echo "    version     Show the version of bake!"
+  echo ""
+  echo "EXPOSED FUNCTIONS:"
+  echo "    bake_task <name> [description]                   Expose the function with <name> as a task"
+  echo "    bake_task_alias <name> <fn_name> [description]   Expose the function <fn_name> as task <name>"
+  echo "    bake_echo_xxxx <message>                         Print <message> in color denoted by xxxx"
+  echo "    bake_log_xxxx <message>                          Conditionally log message (depending on BAKE_LOG_LEVEL)"
 }
 
 function bake_sorted_task_list () {
   (
    for task in "${!BAKE_TASKS[@]}"; do
-     if ! bake_is_registered_subtask $task; then
-       echo $task
-     fi
+     echo "$task"
    done;
-   for task in "${!BAKE_SUPERTASKS[@]}"; do
-     echo $task
-   done
   ) | sort -u
-}
-
-function bake_sorted_subtask_list () {
-  for task in "${!BAKE_SUBTASKS[@]}"; do
-    echo $task
-  done | sort -u
 }
 
 function bake_show_matching_tasks () {
@@ -455,13 +390,6 @@ function bake_show_matching_tasks () {
     if [[ "$task" == *$unknown_task* ]]; then
       matches="$matches $task"
       printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
-      if bake_is_registered_supertask "$task"; then
-        for stask in $(bake_sorted_subtask_list); do
-          if [[ "$stask" == $task-* ]]; then
-            printf "    %-30s %s\\n" "$stask" "$(bake_task_short_desc "$stask")"
-          fi
-        done
-      fi
     fi
   done
 
@@ -474,11 +402,7 @@ function bake_show_matching_tasks () {
 
 function bake_show_all_tasks () {
   for task in $(bake_sorted_task_list); do
-    if bake_is_registered_supertask "$task"; then
-      printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
-    else
-      printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
-    fi
+    printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
   done
 }
 
@@ -496,12 +420,6 @@ function bake_bakefile_help () {
   fi
 
   echo ""
-}
-
-function bake_upgrade () {
-  curl -o "$0.new" "$BAKE_URL"
-  chmod 755 "$0.new"
-  mv "$0.new" "$0"
 }
 
 function bake_version () {
@@ -558,75 +476,87 @@ function bake_source_bakefile() {
   fi
 }
 
-function bake_run () {
-  local task="${1:-}"
-  if [ -n "$task" ]; then
-    shift
-  fi
-
+function bake_find_and_source_bakefile () {
   local bakefile
   bakefile="$(bake_find_bakefile)"
 
   if [ ! -e "$bakefile" ]; then
-    if [ "$task" == "version" ]; then
-      bake_version
-      return 0
-    fi
-
-    if [ "$task" == "upgrade" ]; then
-      bake_upgrade
-      return 0
-    fi
-
-    if [ "$task" == "init" ]; then
-      bake_create_bakefile
-      return 0
-    fi
-
-    bake_log_fatal "could not locate a Bakefile!"
-    echo ""
-    bake_inernal_help
+    bake_echo_red "Unable to locate Bakefile"
+    bake_internal_help
     return 1
   fi
 
   export BAKEFILE="$bakefile"
   bake_source_bakefile "$bakefile"
+}
 
-  if [ -n "$task" ]; then
-    if bake_is_registered_task "$task"; then
-      $(bake_task_function "$task") "$@"
-      exit $?
-    fi
-    # TODO: if it's a supertask and no subtask exists, show help for the supertask
-    if bake_is_registered_supertask "$task"; then
-      if [ -n "${1:-}" ]; then
-        local tname="$task-$1"
-        shift
-        if bake_is_registered_task "$tname"; then
-          $(bake_task_function "$tname") "$@"
-          exit $?
-        fi
-      fi
-    fi
-  fi
+function bake_call_task () {
+  local task="$1"
+  shift
 
-  if [ -n "$BAKE_DEFAULT_TASK" ]; then
-    $(bake_task_function "$BAKE_DEFAULT_TASK") "$@"
+  bake_find_and_source_bakefile
+
+  if bake_is_registered_task "$task"; then
+    $(bake_task_function "$task") "$@"
     exit $?
   fi
+}
 
-  if [ "$task" == "upgrade" ]; then
-    bake_upgrade
-    return 0
+function bake_internal_command () {
+  local cmd="$1"
+  shift
+  case "$cmd" in
+    version)
+      bake_version
+      ;;
+    upgrade)
+      bake_upgrade
+      ;;
+    init)
+      bake_create_bakefile
+      ;;
+    *)
+      bake_log_fatal "Unknown internal command $cmd"
+      return 1
+      ;;
+  esac
+}
+
+function bake_run () {
+  while [[ "${1:-}" == -* ]]; do
+    local opt="$1"
+    case "$opt" in
+      -c|--command)
+        local cmd="${2:-}"
+        if [[ -z "$cmd" ]]; then
+          bake_log_fatal "Option $opt requires an argument"
+          return 1
+        fi
+        shift 2
+        bake_internal_command "$cmd" "$@"
+        return
+        ;;
+      -f|--bakefile)
+        local bakefile="${2:-}"
+        if [[ -z "$bakefile" ]]; then
+          bake_log_fatal "Option $opt requires an argument"
+          return 1
+        fi
+        shift 2
+        export BAKEFILE="$bakefile"
+        ;;
+      *)
+        echo "unknown option: $opt"
+        return 1
+        ;;
+    esac
+  done
+  if [ -z "$*" ]; then
+    bake_echo_red "No task given"
+    bake_internal_help
+    return 1
   fi
-
-  if [ "$task" == "update" ]; then
-    bake_update
-    return 0
-  fi
-
-  bake_bakefile_help "$task"
-  exit 1
+  bake_call_task "$@"
 }
 
 # detect if we're being run or sourced
@@ -664,7 +594,7 @@ function bake_color_echo () {
     opts="$opts $1"
     shift
   done
-  echo "$opts" " " "${color}$*${BAKE_COLOR_NORMAL}"
+  echo "$opts" "${color}$*${BAKE_COLOR_NORMAL}"
 }
 
 function bake_echo_red      () {
