@@ -384,7 +384,6 @@ function bake_sorted_task_list () {
 function bake_show_matching_tasks () {
   local unknown_task="${1:-}"
   local matches=""
-  #for task in "${!BAKE_TASKS[@]}"; do
 
   for task in $(bake_sorted_task_list); do
     if [[ "$task" == *$unknown_task* ]]; then
@@ -409,9 +408,10 @@ function bake_show_all_tasks () {
 function bake_bakefile_help () {
   local unknown_task="${1:-}"
   echo ""
-  echo "$0 task [arg ...]"
+  echo "$0 [options] task [arg ...]"
+  echo "$0 --help"
   echo ""
-  if [ -n "$unknown_task" ]; then
+  if [[ -n "$unknown_task" ]]; then
     if ! bake_show_matching_tasks "$unknown_task"; then
       bake_show_all_tasks
     fi
@@ -494,8 +494,6 @@ function bake_call_task () {
   local task="$1"
   shift
 
-  bake_find_and_source_bakefile
-
   if bake_is_registered_task "$task"; then
     $(bake_task_function "$task") "$@"
     exit $?
@@ -545,17 +543,25 @@ function bake_run () {
         shift 2
         export BAKEFILE="$bakefile"
         ;;
+      -h|--help)
+        shift
+        bake_internal_help
+        return
+        ;;
       *)
         echo "unknown option: $opt"
         return 1
         ;;
     esac
   done
+
+  bake_find_and_source_bakefile
+
   if [ -z "$*" ]; then
-    bake_echo_red "No task given"
-    bake_internal_help
+    bake_bakefile_help "$@"
     return 1
   fi
+
   bake_call_task "$@"
 }
 
