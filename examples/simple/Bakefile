@@ -17,3 +17,8 @@ function remove.bakefile () {
   echo "mv Bakefile{.bak,}"
   mv Bakefile{,.bak}
 }
+
+bake_task my.func!
+function my.func! () {
+  bake_echo_green "foo"
+}
