@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -eu -o pipefail
 
+bake_require bakescripts.sh
+
 bake_task task.1 "simple task"
 function task.1 () {
   echo "you ran a task!"
