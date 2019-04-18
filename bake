@@ -593,6 +593,15 @@ function bake_run () {
         bake_help
         return
         ;;
+      --tasks)
+        shift
+        bake_find_bakefile
+        bake_load_cachefile
+        for task in "${BAKE_TASKS[@]}"; do
+          echo "$task"
+        done
+        return
+        ;;
       -h|--help)
         shift
         bake_help
