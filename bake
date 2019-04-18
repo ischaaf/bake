@@ -321,15 +321,6 @@ function bake_require_from_url () {
 # Internal Task Management Helpers
 ##################################
 
-function bake_task_short_desc () {
-  local name="${1:-}"
-  local descr
-  descr="$(echo "${BAKE_TASK_DESCRIPTIONS[$name]:-}" | head -n 1)"
-  if [[ -n "$descr" ]]; then
-    echo "$descr" | head -n 1
-  fi
-}
-
 function bake_task_function () {
   local name="$1"
   local value="${BAKE_TASKS[$name]:-}"
@@ -356,7 +347,7 @@ function bake_show_matching_tasks () {
   for task in $(bake_sorted_task_list); do
     if [[ "$task" == *$unknown_task* ]]; then
       matches="$matches $task"
-      printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
+      printf "  %-30s %s\\n" "$task" "${BAKE_TASK_DESCRIPTIONS[$task]%%$'\n'*}"
     fi
   done
 
@@ -369,7 +360,7 @@ function bake_show_matching_tasks () {
 
 function bake_show_all_tasks () {
   for task in $(bake_sorted_task_list); do
-    printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
+    printf "  %-30s %s\\n" "$task" "${BAKE_TASK_DESCRIPTIONS[$task]%%$'\n'*}"
   done
 }
 
