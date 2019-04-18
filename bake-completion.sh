@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 _bake () {
-  local cword cur tasks
-  _get_comp_words_by_ref -n : -c cur cword
-  tasks="$(bake | grep -v BAKEFILE | grep '^  ' | sed 's/^  //g' | cut -f1 -d' ')"
+  local cword cur tasks words
+  _get_comp_words_by_ref -n : -c cur cword words
+  tasks="$(bake --tasks)"
   if [[ "$cword" -eq "1" ]]; then
     mapfile -t COMPREPLY < <(compgen -W "$tasks" -- "$cur")
   else
-    mapfile -t COMPREPLY < <(compgen -o default -- "$cur")
+    mapfile -t COMPREPLY < <(compgen -W "$(bake -x "${words[1]}" "$cur")" -- "$cur")
   fi
 
   # NB: this is a workaround for bash's default of splitting words on colons
