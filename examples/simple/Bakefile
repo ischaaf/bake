@@ -24,3 +24,11 @@ bake_task my.func!
 function my.func! () {
   bake_echo_green "foo"
 }
+
+function _bake_complete_task.2 () {
+  docker ps --filter name=build --format "{{.Names}}"
+}
+
+function _bake_complete_task.1 () {
+  get_completions docker "$@"
+}
