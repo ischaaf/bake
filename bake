@@ -539,8 +539,8 @@ function bake_create_bakefile () {
 
 bake_task get-started "Get started by editing this Bakefile"
 function get-started () {
-  if [ -n "$EDITOR" ]; then
-    "$EDITOR" Bakefile
+  if [ -n "\$EDITOR" ]; then
+    "\$EDITOR" Bakefile
   else
     vim Bakefile
   fi
@@ -714,6 +714,9 @@ function bake_internal_command () {
       ;;
     upgrade)
       bake_upgrade
+      ;;
+    update)
+      bake_update
       ;;
     init)
       bake_create_bakefile
