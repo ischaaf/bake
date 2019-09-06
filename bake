@@ -49,13 +49,13 @@ BAKE_COLOR_LGRAY=""
 BAKE_COLOR_DGRAY=""
 
 # Log Levels
-BAKE_LOG_LEVEL_NONE=0  # none
-BAKE_LOG_LEVEL_FATAL=1 # fatal
-BAKE_LOG_LEVEL_ERROR=2 # error
-BAKE_LOG_LEVEL_WARN=3  # warn
-BAKE_LOG_LEVEL_INFO=4  # info
-BAKE_LOG_LEVEL_DEBUG=5 # debug
-BAKE_LOG_LEVEL="${BAKE_LOG_LEVEL:-$BAKE_LOG_LEVEL_INFO}"
+export BAKE_LOG_LEVEL_NONE=0  # none
+export BAKE_LOG_LEVEL_FATAL=1 # fatal
+export BAKE_LOG_LEVEL_ERROR=2 # error
+export BAKE_LOG_LEVEL_WARN=3  # warn
+export BAKE_LOG_LEVEL_INFO=4  # info
+export BAKE_LOG_LEVEL_DEBUG=5 # debug
+export BAKE_LOG_LEVEL="${BAKE_LOG_LEVEL:-$BAKE_LOG_LEVEL_INFO}"
 
 # Bake task tracking
 BAKE_PACKAGES_PATH="$HOME/.bake/packages"
@@ -142,6 +142,31 @@ function bake_require () {
   else
     bake_require_from_fs "$module"
   fi
+}
+
+function bake_require_full () {
+  local git_branch="master"
+  local git_url filepath
+  # START Arg Parse Block
+  local PARAMS=""
+  while (( "$#" )); do
+    case "$1" in
+      --branch)
+        git_branch="$2"
+        shift 2
+        ;;
+      --repo)
+        git_url="$2"
+        shift 2
+        ;;
+      --) shift; break;; # end argument parsing
+      -*) echo "Error: Unsupported flag $1" >&2; exit 1;; # unsupported flags
+      *) PARAMS="$PARAMS $1"; shift;; # preserve positional arguments
+    esac
+  done
+  eval set -- "$PARAMS" # set positional arguments in their proper place
+  # END Arg Parse Block
+  filepath="$1"
 }
 
 function bake_require_all () {
