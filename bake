@@ -56,6 +56,7 @@ export BAKE_LOG_LEVEL_WARN=3  # warn
 export BAKE_LOG_LEVEL_INFO=4  # info
 export BAKE_LOG_LEVEL_DEBUG=5 # debug
 export BAKE_LOG_LEVEL="${BAKE_LOG_LEVEL:-$BAKE_LOG_LEVEL_INFO}"
+BAKE_LOG_DEST="${BAKE_LOG_DEST:-/dev/stderr}"
 
 # Bake task tracking
 BAKE_PACKAGES_PATH="$HOME/.bake/packages"
@@ -574,6 +575,24 @@ END
   fi
 }
 
+function bake_print_def () {
+  local func_name="${1:?Missing required arg: function_name}"
+  bake_find_bakefile
+  bake_load_cachefile
+  bake_source_bakefile_once
+  bake_log_debug "Printing definition for function $func_name"
+  typeset -f "$func_name"
+}
+
+function bake_print_lib () {
+  local lib_name="${1:?Missing required arg: lib_name}"
+  bake_find_bakefile
+  bake_load_cachefile
+  bake_source_bakefile_once
+  bake_log_debug "Printing library $lib_name"
+  cat "${BAKE_LIBS[$lib_name]}"
+}
+
 function bake_write_cachefile () {
   bake_log_info "Creating cachefile"
   echo ";; Bake cache file for: $BAKEFILE" > "$BAKE_CACHE_FILE"
@@ -745,6 +764,12 @@ function bake_internal_command () {
       ;;
     init)
       bake_create_bakefile
+      ;;
+    print-def)
+      bake_print_def "$@"
+      ;;
+    print-lib)
+      bake_print_lib "$@"
       ;;
     *)
       bake_log_fatal "Unknown internal command $cmd"
@@ -975,31 +1000,31 @@ function bake_echo_dgray    () {
 
 function bake_log_debug () {
   if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_DEBUG" ]]; then
-    echo "[DEBUG ${FUNCNAME[1]}] $*"
+    echo "[DEBUG ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
 function bake_log_info () {
   if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_INFO" ]]; then
-    echo "[INFO ${FUNCNAME[1]}] $*"
+    echo "[INFO ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
 function bake_log_warn () {
   if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_WARN" ]]; then
-    echo "[WARN ${FUNCNAME[1]}] $*"
+    echo "[WARN ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
 function bake_log_error () {
   if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_ERROR" ]]; then
-    echo "[ERROR ${FUNCNAME[1]}] $*"
+    echo "[ERROR ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
 function bake_log_fatal () {
   if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_FATAL" ]]; then
-    echo "[FATAL ${FUNCNAME[1]}] $*"
+    echo "[FATAL ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
