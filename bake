@@ -31,6 +31,7 @@ export BAKE_CACHE_FILE
 BAKE_VERSION="2019-03-01"
 BAKE_STDOUT_IS_TERMINAL=""
 BAKE_HAS_SOURCED_BAKEFILE=""
+BAKE_DEBUG_MODE=""
 
 # Colors
 BAKE_COLOR_NORMAL=""
@@ -143,31 +144,6 @@ function bake_require () {
   else
     bake_require_from_fs "$module"
   fi
-}
-
-function bake_require_full () {
-  local git_branch="master"
-  local git_url filepath
-  # START Arg Parse Block
-  local PARAMS=""
-  while (( "$#" )); do
-    case "$1" in
-      --branch)
-        git_branch="$2"
-        shift 2
-        ;;
-      --repo)
-        git_url="$2"
-        shift 2
-        ;;
-      --) shift; break;; # end argument parsing
-      -*) echo "Error: Unsupported flag $1" >&2; exit 1;; # unsupported flags
-      *) PARAMS="$PARAMS $1"; shift;; # preserve positional arguments
-    esac
-  done
-  eval set -- "$PARAMS" # set positional arguments in their proper place
-  # END Arg Parse Block
-  filepath="$1"
 }
 
 function bake_require_all () {
@@ -397,6 +373,9 @@ function bake_call_task () {
   if bake_is_registered_task "$task"; then
     $(bake_task_function "$task") "$@"
     return $?
+  elif [[ "$BAKE_DEBUG_MODE" = 1 && "$(type -t "$task")" = function ]]; then
+    bake_log_info "Debug mode is on, running non-task function"
+    "$task" "$@"
   else
     bake_task_help "$task"
     return 1
@@ -413,10 +392,6 @@ function bake_find_bakefile_impl () {
     return 0
   fi
 
-  if [[ -f "bakefile" ]]; then
-    echo "$project_root/bakefile"
-    return 0
-  fi
   return 1
 }
 
@@ -469,10 +444,17 @@ function bake_print_def () {
 }
 
 function bake_print_lib () {
-  local lib_name="${1:?Missing required arg: lib_name}"
+  local lib_name="${1:-}"
   bake_find_bakefile
   bake_load_cachefile
   bake_source_bakefile_once
+  if [[ -z "$lib_name" ]]; then
+    echo "Sourced libraries:"
+    for lib in "${BAKE_LIBS[@]}"; do
+      echo "  $(basename "$lib")"
+    done
+    return
+  fi
   bake_log_debug "Printing library $lib_name"
   cat "${BAKE_LIBS[$lib_name]}"
 }
@@ -686,6 +668,10 @@ function bake_run () {
         shift 2
         BAKEFILE="$bakefile"
         ;;
+      -d|--debug)
+        BAKE_DEBUG_MODE="1"
+        shift
+        ;;
       -x|--complete)
         local task="${2:-}"
         if [[ -z "$task" ]]; then
@@ -755,6 +741,7 @@ function bake_help () {
   echo "OPTIONS:"
   echo "    -c, --command <command>  Execute interal bake command"
   echo "    -h, --help               Print this help message"
+  echo "    -d, --debug              Execute bake in debug mode, allowing for the execution of non bake task functions"
   echo "    --complete <task>        Print completions for task"
   echo ""
   echo "The interal commands (-c, --command) that bake supports are:"
