@@ -450,13 +450,13 @@ function bake_print_lib () {
   bake_source_bakefile_once
   if [[ -z "$lib_name" ]]; then
     echo "Sourced libraries:"
-    for lib in "${BAKE_LIBS[@]}"; do
-      echo "  $(basename "$lib")"
+    for lib_key in "${!BAKE_LIBS[@]}"; do
+      echo "  $lib_key -> ${BAKE_LIBS[$lib_key]}"
     done
     return
   fi
   bake_log_debug "Printing library $lib_name"
-  cat "${BAKE_LIBS[$lib_name]}"
+  echo "${BAKE_LIBS[$lib_name]}"
 }
 
 function bake_write_cachefile () {
@@ -634,7 +634,7 @@ function bake_internal_command () {
     print-def)
       bake_print_def "$@"
       ;;
-    print-lib)
+    lib)
       bake_print_lib "$@"
       ;;
     *)
