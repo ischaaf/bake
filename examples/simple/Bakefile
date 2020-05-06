@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+bake_require bakescripts.sh
+
+bake_task task.1 "simple task"
+function task.1 () {
+  echo "you ran a task!"
+}
+
+bake_task task.2 "pass me some args"
+function task.2 () {
+  echo "You passed: $*"
+}
+
+bake_task remove.bakefile "move the bakefile to test when no file exists"
+function remove.bakefile () {
+  echo "To restore Bakefile run:"
+  echo "mv Bakefile{.bak,}"
+  mv Bakefile{,.bak}
+}
+
+bake_task my.func!
+function my.func! () {
+  bake_echo_green "foo"
+}
+
+function _bake_complete_task.2 () {
+  docker ps --filter name=build --format "{{.Names}}"
+}
+
+function _bake_complete_task.1 () {
+  get_completions docker "$@"
+}

@@ -2,10 +2,38 @@
 #shellcheck disable=SC1090
 set -Eeu -o pipefail
 
+##################################
+# Bake
+# Sections:
+#   1. Setup Environment
+#   2. Provided Functions (intended for Bakefiles)
+#   3. Internal Package Management Helpers
+#   4. Internal Task Management Helpers
+#   5. Internal Bakefile Helpers
+#   6. CLI
+#   7. Colors & Logging
+#   8. Entrypoint
+##################################
+
+##################################
+# Setup Environment
+##################################
+
+# The list of directories that bake will search when resolving libraries (via require)
+export BAKEPATH="${BAKEPATH:-}"
+# Location where bake will install external packages
+export BAKE_PACKAGES_PATH="${BAKE_PACKAGES_PATH:-$HOME/.bake/packages}"
+# The location of the bakefile being used
+export BAKEFILE="${BAKEFILE:-}"
+export BAKE_CACHE_FILE
 
 # TODO: detect if we're being sourced or if we're being executed
-BAKE_VERSION="2014-11-05"
+BAKE_VERSION="2019-03-01"
 BAKE_STDOUT_IS_TERMINAL=""
+BAKE_HAS_SOURCED_BAKEFILE=""
+BAKE_DEBUG_MODE=""
+
+# Colors
 BAKE_COLOR_NORMAL=""
 BAKE_COLOR_RED=""
 BAKE_COLOR_LRED=""
@@ -20,47 +48,30 @@ BAKE_COLOR_CYAN=""
 BAKE_COLOR_LCYAN=""
 BAKE_COLOR_LGRAY=""
 BAKE_COLOR_DGRAY=""
-BAKE_URL="https://raw.githubusercontent.com/kyleburton/bake/master/bake"
 
-BAKE_LOG_LEVEL_NONE=0  # none
-BAKE_LOG_LEVEL_FATAL=1 # fatal
-BAKE_LOG_LEVEL_ERROR=2 # error
-BAKE_LOG_LEVEL_WARN=3  # warn
-BAKE_LOG_LEVEL_INFO=4  # info
-BAKE_LOG_LEVEL_DEBUG=5 # debug
-BAKE_LOG_LEVEL="${BAKE_LOG_LEVEL:-$BAKE_LOG_LEVEL_INFO}"
+# Log Levels
+export BAKE_LOG_LEVEL_NONE=0  # none
+export BAKE_LOG_LEVEL_FATAL=1 # fatal
+export BAKE_LOG_LEVEL_ERROR=2 # error
+export BAKE_LOG_LEVEL_WARN=3  # warn
+export BAKE_LOG_LEVEL_INFO=4  # info
+export BAKE_LOG_LEVEL_DEBUG=5 # debug
+export BAKE_LOG_LEVEL="${BAKE_LOG_LEVEL:-$BAKE_LOG_LEVEL_INFO}"
+BAKE_LOG_DEST="${BAKE_LOG_DEST:-/dev/stderr}"
 
-# BAKEPATH
-#
-#  The list of directories that bake will search when resolving libraries (via require)
-#
-BAKEPATH="${BAKEPATH:-}"
-
+# Bake task tracking
 BAKE_PACKAGES_PATH="$HOME/.bake/packages"
 
-BAKE_DEFAULT_TASK=""
-BAKE_TASK_SEP="-"
-declare -A BAKE_TASKS
-declare -A BAKE_SUPERTASKS
-declare -A BAKE_SUBTASKS
-declare -A BAKE_TASK_DESCRIPTIONS
-declare -A BAKE_SUPERTASK_DESCRIPTIONS
-declare -A BAKE_LIBS
-
-function bake_push_libdir () {
-  local path="$1"
-  export BAKEPATH="$path:$BAKEPATH"
+function bake_reset_task_variables () {
+  unset BAKE_TASKS
+  unset BAKE_TASK_DESCRIPTIONS
+  unset BAKE_LIBS
+  declare -gA BAKE_TASKS
+  declare -gA BAKE_TASK_DESCRIPTIONS
+  declare -gA BAKE_LIBS
 }
 
-function bake_add_libdir () {
-  local path="$1"
-  export BAKEPATH="$BAKEPATH:$path"
-}
-
-function bake_default_task () {
-  local task="$1"
-  export BAKE_DEFAULT_TASK="$task"
-}
+bake_reset_task_variables
 
 function bake_root_dir () {
   # see: http://stackoverflow.com/questions/4774054/reliable-way-for-a-bash-script-to-get-the-full-path-to-itself
@@ -71,80 +82,23 @@ function bake_root_dir () {
   echo "$BAKE_ROOT_DIR"
 }
 
-function bake_bakefile_dir () {
-  dirname "$BAKEFILE"
-}
-
 BAKE_ROOT_DIR="$(bake_root_dir)"
 
-function bake_looks_like_url () {
-  local thing="$1"
+##################################
+# Provided Functions (intended for Bakefiles)
+##################################
 
-  if [[ $thing == http://* ]]; then
-    return 0
-  fi
-
-  if [[ $thing == https://* ]]; then
-    return 0
-  fi
-
-  if [[ $thing == github.com/* ]]; then
-    return 0
-  fi
-
-  return 1
+function bake_push_libdir () {
+  BAKEPATH="$1:$BAKEPATH"
 }
 
-function bake_source_from_fs () {
-  local file="$1"
-  local fname="$2"
-  # shellcheck disable=SC2034
-  BAKE_LIBS["$file"]="$fname"
-  # shellcheck disable=SC2064
-  trap "bake_echo_red 'Error[bake_require_from_fs] loading require: $fname'" EXIT
-  source "$fname"
-  trap EXIT # clear the trap
-  return 0
+function bake_add_libdir () {
+  BAKEPATH="$BAKEPATH:$1"
 }
 
-function bake_require_from_fs () {
-  local file="$1"
 
-  if [[ -e "$file" ]]; then
-    bake_source_from_fs "$file" "$file"
-    return 0
-  fi
-
-  if [[ -e "$(bake_bakefile_dir)/$file" ]]; then
-    bake_source_from_fs "$file" "$(bake_bakefile_dir)/$file"
-    return 0
-  fi
-
-  for path in $(echo "$BAKEPATH" | tr : ' '); do
-    local fname="$path/$file"
-    if [ -e "$fname" ]; then
-      bake_source_from_fs "$file" "$fname"
-      return 0
-    fi
-
-    fname="$path/$file.sh"
-    if [ -e "$fname" ]; then
-      bake_source_from_fs "$file" "$fname"
-      return 0
-    fi
-  done
-
-  echo "Error[bake_require_from_fs]: unable to require $file! (not found on BAKEPATH)"
-  return 1
-}
-
-function bake_url_to_package_path () {
-  local url="$1"
-  # strip the http:// or https:// if present
-  # then see if it exists as $BAKE_PACKAGES_PATH/$url
-  local fpath
-  fpath="$(echo "$url" | sed 's/^https\?:\/\///')"
-  echo "$BAKE_PACKAGES_PATH/$fpath"
+function bake_bakefile_dir () {
+  dirname "$BAKEFILE"
 }
 
 function bake_require_git () {
@@ -182,61 +136,6 @@ function bake_require_git () {
   source "$BAKE_PACKAGES_PATH/$full_package_path/$libpath"
 }
 
-function bake_ensure_bake_packages_path () {
-  test -d "$BAKE_PACKAGES_PATH" || mkdir -p "$BAKE_PACKAGES_PATH"
-}
-
-function bake_package_install () {
-  local url="$1"
-  local tag="${2:-master}"
-
-  bake_ensure_bake_packages_path
-  pushd "$BAKE_PACKAGES_PATH"
-  local git_project_name
-  git_project_name="$(echo "$url" | awk -F/ '{print $3 }')"
-  local git_host_and_user
-  git_host_and_user="$(echo "$url" | awk -F/ '{print $1 "/" $2 }')"
-  local git_url
-  git_url="$(echo "$url" | awk -F/ '{print $1 "/" $2 "/" $3}')"
-  test -d "$git_host_and_user" || mkdir -p "$git_host_and_user"
-  cd "$git_host_and_user"
-  if [ ! -e "$git_project_name" ]; then
-    git clone "https://$git_url"
-  fi
-  cd "$git_project_name"
-  git checkout .
-  git pull
-  git checkout "$tag"
-  popd > /dev/null
-}
-
-function bake_require_from_url () {
-  local url="$1"
-  local fspath
-  fspath="$(bake_url_to_package_path "$url")"
-
-  if [ -e "$fspath" ]; then
-    # shellcheck disable=SC2064
-    trap "bake_echo_red 'Error[bake_require_from_url] loading require: $fspath'" EXIT
-    source "$fspath"
-    trap EXIT # clear the trap
-    return 0
-  fi
-
-  bake_package_install "$url"
-
-  if [ ! -e "$fspath" ]; then
-    # shellcheck disable=SC2064
-    echo "Error[bake_require_from_url]: Sorry, after clone, fech and check out, $fspath still doesn't exist"
-    bake_echo_red "Require not found: $url => $fspath"
-  fi
-
-  # shellcheck disable=SC2064
-  trap "bake_echo_red 'Error[bake_require_from_url] loading require: $fspath'" EXIT
-  source "$fspath"
-  trap EXIT # clear the trap
-}
-
 # sources a library
 function bake_require () {
   local module="$1"
@@ -260,186 +159,201 @@ function bake_require_all () {
 function bake_task () {
   local name="${1:-}"
   local short_desc="${2:-No Description for task: $name}"
-  if [ -z "$name" ]; then
-    echo "Error[bake_task]: you must supply a task name!"
+  if [[ -z "$name" ]]; then
+    bake_log_fatal "you must supply a task name!"
     return 1
   fi
-  BAKE_TASKS[$name]="ok"
+  BAKE_TASKS[$name]="$name"
   BAKE_TASK_DESCRIPTIONS[$name]="$short_desc"
 }
 
-function bake_subtask () {
-  local supertask_name="${1:-}"
-  local subtask_name="${2:-}"
-  local short_desc="${3:-No Description for task: $supertask_name $subtask_name}"
-
-  if [ -z "$supertask_name" ]; then
-    echo "Error[bake_subtask]: you must supply a [super] task name!"
+# bake_task_alias taskname function ["description"]
+function bake_task_alias () {
+  local name fn_name short_desc
+  name="${1:-}"
+  fn_name="${2:-}"
+  local short_desc="${3:-No Description for task: $name}"
+  if [[ -z "$name" || -z "$fn_name" ]]; then
+    bake_log_fatal "you must supply a task name and function name!"
     return 1
   fi
-
-  if [ -z "$subtask_name" ]; then
-    echo "Error[bake_subtask]: you must supply a [sub] task name!"
-    return 1
-  fi
-
-  local tname="$supertask_name$BAKE_TASK_SEP$subtask_name"
-  BAKE_TASKS[$tname]="ok"
-  BAKE_SUPERTASKS[$supertask_name]="ok"
-  BAKE_SUBTASKS[$tname]="ok"
-  BAKE_TASK_DESCRIPTIONS[$tname]="$short_desc"
-}
-
-function bake_supertask () {
-  local supertask_name="${1:-}"
-  local short_desc="${2:-No Description for task: $supertask_name}"
-
-  if [ -z "$supertask_name" ]; then
-    echo "Error[bake_subtask]: you must supply a [super] task name!"
-    return 1
-  fi
-
-  BAKE_SUPERTASKS[$supertask_name]="ok"
-  BAKE_SUPERTASK_DESCRIPTIONS[$supertask_name]="$short_desc"
-}
-
-function bake_task_short_desc () {
-  local name="${1:-}"
-  local descr
-  descr="$(echo "${BAKE_TASK_DESCRIPTIONS[$name]:-}" | head -n 1)"
-  if [ -z "$descr" ]; then
-    echo "${BAKE_SUPERTASK_DESCRIPTIONS[$name]:-}" | head -n 1
-  else
-    echo "$descr" | head -n 1
-  fi
-}
-
-function bake_is_registered_task () {
-  local name="$1"
-  local value="${BAKE_TASKS[$name]:-}"
-  test "$value" = "ok"
-}
-
-function bake_is_registered_subtask () {
-  local name="$1"
-  local value="${BAKE_SUBTASKS[$name]:-}"
-  test "$value" = "ok"
-}
-
-function bake_is_registered_supertask () {
-  local name="$1"
-  local value="${BAKE_SUPERTASKS[$name]:-}"
-  test "$value" = "ok"
+  BAKE_TASKS[$name]="$fn_name"
+  BAKE_TASK_DESCRIPTIONS[$name]="$short_desc"
 }
 
 function bake_cd () {
   local path="${1:-}"
-  if [ -z "$path" ]; then
+  if [[ -z "$path" ]]; then
     cd "$(dirname "$BAKEFILE")"
   else
     cd "$(dirname "$BAKEFILE")/$path"
   fi
 }
 
-function bake_find_bakefile_impl () {
-  local project_root
-  project_root="$(pwd)"
-  if [ -f "Bakefile" ]; then
-    echo "$project_root/Bakefile"
+##################################
+# Internal Package Management Helpers
+##################################
+
+function bake_looks_like_url () {
+  local thing="$1"
+
+  if [[ $thing == http://* ]]; then
     return 0
   fi
 
-  if [ -f "bakefile" ]; then
-    echo "$project_root/bakefile"
+  if [[ $thing == https://* ]]; then
     return 0
   fi
 
-  if [ -d "bake" ]; then
-    echo "$project_root/bake"
+  if [[ $thing == github.com/* ]]; then
     return 0
   fi
 
-  if [ -d "Bake" ]; then
-    echo "$project_root/Bake"
-    return 0
-  fi
-
-  if [ "/" = "$(pwd)" ]; then
-    echo ""
-    return 1;
-  fi
-
-  cd ..
-  bake_find_bakefile_impl
+  return 1
 }
 
-function bake_find_bakefile () {
-  local start_path
-  start_path="$(pwd)"
-  if [ -n "${BAKEFILE:-}" ]; then
-    echo "$BAKEFILE"
+function bake_source_from_fs () {
+  local file="$1"
+  local fname="$2"
+  # shellcheck disable=SC2034
+  BAKE_LIBS["$file"]="$fname"
+  # shellcheck disable=SC2064
+  trap "bake_log_fatal 'loading require: $fname'" EXIT
+  source "$fname"
+  trap EXIT # clear the trap
+  return 0
+}
+
+function bake_require_from_fs () {
+  local file="$1"
+
+  if [[ -e "$file" ]]; then
+    bake_source_from_fs "$file" "$file"
     return 0
   fi
 
-  bake_find_bakefile_impl
-  cd "$start_path" > /dev/null 2>&1
+  if [[ -e "$(bake_bakefile_dir)/$file" ]]; then
+    bake_source_from_fs "$file" "$(bake_bakefile_dir)/$file"
+    return 0
+  fi
+
+  for path in $(echo "$BAKEPATH" | tr : ' '); do
+    local fname="$path/$file"
+    if [[ -e "$fname" ]]; then
+      bake_source_from_fs "$file" "$fname"
+      return 0
+    fi
+
+    fname="$path/$file.sh"
+    if [[ -e "$fname" ]]; then
+      bake_source_from_fs "$file" "$fname"
+      return 0
+    fi
+  done
+
+  bake_log_fatal "unable to require $file! (not found on BAKEPATH)"
+  return 1
 }
 
-function bake_inernal_help () {
-  echo "$0 task [arg ...]"
-  echo ""
-  echo "Hi there!  Tasks are taken from the file Bakefile (or bakefile) in the $PWD."
-  echo "You can specify an alternate Bakefile by setting BAKEFILE:"
-  echo ""
-  echo "  BAKEFILE=\"my.Bakefile\" bake"
-  echo ""
-  echo "The internal commands that bake supports are:"
-  echo ""
-  echo "   init        Creates a skeleton Bakefile"
-  echo "   update      Updates libraries (see ~/.bake)."
-  echo "   upgrade     Refreshes bake itself."
-  echo "   version     Show the version of bake!"
+function bake_url_to_package_path () {
+  local url="$1"
+  # strip the http:// or https:// if present
+  # then see if it exists as $BAKE_PACKAGES_PATH/$url
+  local fpath
+  fpath="$(echo "$url" | sed 's/^https\?:\/\///')"
+  echo "$BAKE_PACKAGES_PATH/$fpath"
+}
+
+function bake_ensure_bake_packages_path () {
+  test -d "$BAKE_PACKAGES_PATH" || mkdir -p "$BAKE_PACKAGES_PATH"
+}
+
+function bake_package_install () {
+  local url="$1"
+  local tag="${2:-master}"
+
+  bake_ensure_bake_packages_path
+  pushd "$BAKE_PACKAGES_PATH"
+  local git_project_name
+  git_project_name="$(echo "$url" | awk -F/ '{print $3 }')"
+  local git_host_and_user
+  git_host_and_user="$(echo "$url" | awk -F/ '{print $1 "/" $2 }')"
+  local git_url
+  git_url="$(echo "$url" | awk -F/ '{print $1 "/" $2 "/" $3}')"
+  test -d "$git_host_and_user" || mkdir -p "$git_host_and_user"
+  cd "$git_host_and_user"
+  if [[ ! -e "$git_project_name" ]]; then
+    git clone "https://$git_url"
+  fi
+  cd "$git_project_name"
+  git checkout .
+  git pull
+  git checkout "$tag"
+  popd > /dev/null
+}
+
+function bake_require_from_url () {
+  local url="$1"
+  local fspath
+  fspath="$(bake_url_to_package_path "$url")"
+
+  if [[ -e "$fspath" ]]; then
+    # shellcheck disable=SC2064
+    trap "bake_log_fatal 'loading require: $fspath'" EXIT
+    source "$fspath"
+    trap EXIT # clear the trap
+    return 0
+  fi
+
+  bake_package_install "$url"
+
+  if [[ ! -e "$fspath" ]]; then
+    # shellcheck disable=SC2064
+    bake_log_error "Sorry, after clone, fech and check out, $fspath still doesn't exist"
+    bake_echo_red "Require not found: $url => $fspath"
+  fi
+
+  # shellcheck disable=SC2064
+  trap "bake_log_fatal 'loading require: $fspath'" EXIT
+  source "$fspath"
+  trap EXIT # clear the trap
+}
+
+##################################
+# Internal Task Management Helpers
+##################################
+
+function bake_task_function () {
+  local name="$1"
+  local value="${BAKE_TASKS[$name]:-}"
+  echo "$value"
+}
+
+function bake_is_registered_task () {
+  test -n "$(bake_task_function "$1")"
 }
 
 function bake_sorted_task_list () {
   (
    for task in "${!BAKE_TASKS[@]}"; do
-     if ! bake_is_registered_subtask $task; then
-       echo $task
-     fi
+     echo "$task"
    done;
-   for task in "${!BAKE_SUPERTASKS[@]}"; do
-     echo $task
-   done
   ) | sort -u
 }
 
-function bake_sorted_subtask_list () {
-  for task in "${!BAKE_SUBTASKS[@]}"; do
-    echo $task
-  done | sort -u
-}
-
+# TODO (ischaaf): Usage: INTERNAL.CLI
 function bake_show_matching_tasks () {
   local unknown_task="${1:-}"
   local matches=""
-  #for task in "${!BAKE_TASKS[@]}"; do
 
   for task in $(bake_sorted_task_list); do
     if [[ "$task" == *$unknown_task* ]]; then
       matches="$matches $task"
-      printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
-      if bake_is_registered_supertask "$task"; then
-        for stask in $(bake_sorted_subtask_list); do
-          if [[ "$stask" == $task-* ]]; then
-            printf "    %-30s %s\\n" "$stask" "$(bake_task_short_desc "$stask")"
-          fi
-        done
-      fi
+      printf "  %-30s %s\\n" "$task" "${BAKE_TASK_DESCRIPTIONS[$task]%%$'\n'*}"
     fi
   done
 
-  if [ -z "$matches" ]; then
+  if [[ -z "$matches" ]]; then
     return 1
   else
     return 0
@@ -448,42 +362,240 @@ function bake_show_matching_tasks () {
 
 function bake_show_all_tasks () {
   for task in $(bake_sorted_task_list); do
-    if bake_is_registered_supertask "$task"; then
-      printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
-    else
-      printf "  %-30s %s\\n" "$task" "$(bake_task_short_desc "$task")"
+    printf "  %-30s %s\\n" "$task" "${BAKE_TASK_DESCRIPTIONS[$task]%%$'\n'*}"
+  done
+}
+
+function bake_call_task () {
+  local task="$1"
+  shift
+
+  if bake_is_registered_task "$task"; then
+    $(bake_task_function "$task") "$@"
+    return $?
+  elif [[ "$BAKE_DEBUG_MODE" = 1 && "$(type -t "$task")" = function ]]; then
+    bake_log_info "Debug mode is on, running non-task function"
+    "$task" "$@"
+  else
+    bake_task_help "$task"
+    return 1
+  fi
+}
+
+##################################
+# Internal Bakefile Helpers
+##################################
+
+function bake_find_bakefile_impl () {
+  if [[ -f "$PWD/Bakefile" ]]; then
+    echo "$PWD/Bakefile"
+    return 0
+  fi
+
+  return 1
+}
+
+function bake_find_bakefile () {
+  local bakefile cachefile
+  if [[ -n "${BAKEFILE:-}" ]]; then
+    if [[ ! -f "$BAKEFILE" ]]; then
+      bake_log_fatal "BAKEFILE set to non-existant file"
+      return 1
+    fi
+    bakefile="$BAKEFILE"
+    cachefile="$(basename "$BAKEFILE")/.bakecache"
+  elif [[ -f "$PWD/Bakefile" ]]; then
+    bakefile="$PWD/Bakefile"
+    cachefile="$PWD/.bakecache"
+  else
+    bake_log_fatal "Unable to locate Bakefile"
+    return 1
+  fi
+  BAKEFILE="$bakefile"
+  BAKE_CACHE_FILE="$cachefile"
+}
+
+function bake_create_bakefile () {
+  if [[ ! -e "Bakefile" ]]; then
+    cat > "Bakefile" <<END
+#!/usr/bin/env bash
+
+# bake_require github.com/kyleburton/bake-recipes/docker/docker.sh
+
+bake_task get-started "Get started by editing this Bakefile"
+function get-started () {
+  if [ -n "\$EDITOR" ]; then
+    "\$EDITOR" Bakefile
+  else
+    vim Bakefile
+  fi
+}
+END
+  fi
+}
+
+function bake_print_def () {
+  local func_name="${1:?Missing required arg: function_name}"
+  bake_find_bakefile
+  bake_load_cachefile
+  bake_source_bakefile_once
+  bake_log_debug "Printing definition for function $func_name"
+  typeset -f "$func_name"
+}
+
+function bake_print_lib () {
+  local lib_name="${1:-}"
+  bake_find_bakefile
+  bake_load_cachefile
+  bake_source_bakefile_once
+  if [[ -z "$lib_name" ]]; then
+    echo "Sourced libraries:"
+    for lib_key in "${!BAKE_LIBS[@]}"; do
+      echo "  $lib_key -> ${BAKE_LIBS[$lib_key]}"
+    done
+    return
+  fi
+  bake_log_debug "Printing library $lib_name"
+  echo "${BAKE_LIBS[$lib_name]}"
+}
+
+function bake_write_cachefile () {
+  bake_log_info "Creating cachefile"
+  echo ";; Bake cache file for: $BAKEFILE" > "$BAKE_CACHE_FILE"
+  echo ";; This file is autogenerated by bake" >> "$BAKE_CACHE_FILE"
+
+  # write libs
+  echo '[BAKE_LIBS]' >> "$BAKE_CACHE_FILE"
+  for i in "${!BAKE_LIBS[@]}"; do
+    echo "$i = ${BAKE_LIBS[$i]}" >> "$BAKE_CACHE_FILE"
+  done
+
+  # write tasks
+  echo '[BAKE_TASKS]' >> "$BAKE_CACHE_FILE"
+  for i in "${!BAKE_TASKS[@]}"; do
+    echo "$i = ${BAKE_TASKS[$i]}" >> "$BAKE_CACHE_FILE"
+  done
+  # write task descriptions
+  echo '[BAKE_TASK_DESCRIPTIONS]' >> "$BAKE_CACHE_FILE"
+  for i in "${!BAKE_TASK_DESCRIPTIONS[@]}"; do
+    echo "$i = ${BAKE_TASK_DESCRIPTIONS[$i]}" >> "$BAKE_CACHE_FILE"
+  done
+}
+
+function bake_source_cachefile () {
+  if [[ ! -f "$BAKE_CACHE_FILE" ]]; then
+    bake_log_info "Cachefile does not exist"
+    return 1
+  fi
+  if [[ "$BAKE_CACHE_FILE" -ot "$BAKEFILE" ]]; then
+    bake_log_info "Cachefile is out of date (BAKEFILE is newer)"
+    return 1
+  fi
+
+  local section
+  while IFS=' =' read -r key val; do
+    if [[ "$key" =~ \;\;.* ]]; then
+      # bake_log_info "Comment: $val"
+      continue
+    fi
+    if [[ "$key" =~ \[(.*)\] ]]; then
+      section="${BASH_REMATCH[1]}"
+      # bake_log_info "Set Section: $section"
+      continue
+    fi
+    eval "${section}[$key]=\"$val\""
+    # bake_log_info "Key: $key, Val: $val"
+  done < "$BAKE_CACHE_FILE"
+
+  # Ensure libs have not been modified more recently than cachefile
+  for lib_key in "${!BAKE_LIBS[@]}"; do
+    if [[ "$BAKE_CACHE_FILE" -ot "${BAKE_LIBS[$lib_key]}" ]]; then
+      bake_log_info "Cachefile is out of date (BAKE_LIB '${BAKE_LIBS[$lib_key]}' is newer)"
+      bake_reset_task_variables
+      return 1
     fi
   done
 }
 
-function bake_bakefile_help () {
-  local unknown_task="${1:-}"
-  echo ""
-  echo "$0 task [arg ...]"
-  echo ""
-  if [ -n "$unknown_task" ]; then
-    if ! bake_show_matching_tasks "$unknown_task"; then
-      bake_show_all_tasks
-    fi
-  else
-    bake_show_all_tasks
+function bake_load_cachefile () {
+  if ! bake_source_cachefile; then
+    bake_log_info "Unable to source cachefile, recreating"
+    bake_source_bakefile_once
+    bake_write_cachefile
   fi
-
-  echo ""
 }
 
-function bake_upgrade () {
-  curl -o "$0.new" "$BAKE_URL"
-  chmod 755 "$0.new"
-  mv "$0.new" "$0"
+function bake_source_bakefile_once () {
+  if [[ -z "$BAKE_HAS_SOURCED_BAKEFILE" ]]; then
+    BAKE_HAS_SOURCED_BAKEFILE="true"
+    source "$BAKEFILE"
+  fi
 }
+
+#
+# Author: Brian Beffa <brbsix@gmail.com>
+# Original source: https://brbsix.github.io/2015/11/29/accessing-tab-completion-programmatically-in-bash/
+# License: LGPLv3 (http://www.gnu.org/licenses/lgpl-3.0.txt)
+#
+
+function get_completions () {
+    local completion COMP_CWORD COMP_LINE COMP_POINT COMP_WORDS COMPREPLY=()
+
+    set +Eeu +o pipefail
+    # load bash-completion if necessary
+    declare -F _completion_loader &>/dev/null || {
+      source /usr/share/bash-completion/bash_completion
+    }
+
+    COMP_LINE=$*
+    COMP_POINT=${#COMP_LINE}
+
+    eval set -- "$@"
+
+    COMP_WORDS=("$@")
+
+    # add '' to COMP_WORDS if the last character of the command line is a space
+    [[ ${COMP_LINE[*]: -1} = ' ' ]] && COMP_WORDS+=('')
+
+    # index of the last word
+    COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1 ))
+
+    # determine completion function
+    completion=$(complete -p "$1" 2>/dev/null | awk '{print $(NF-1)}')
+
+    # run _completion_loader only if necessary
+    [[ -n $completion ]] || {
+      # load completion
+      _completion_loader "$1"
+
+      # detect completion
+      completion=$(complete -p "$1" 2>/dev/null | awk '{print $(NF-1)}')
+    }
+
+    # ensure completion was detected
+    if [[ -z $completion ]]; then
+      set -eu -o pipefail
+      return 1
+    fi
+
+    # execute completion function
+    "$completion"
+    set -eu -o pipefail
+
+    # print completions to stdout
+    printf '%s\n' "${COMPREPLY[@]}" | LC_ALL=C sort
+}
+
+##################################
+# CLI
+##################################
 
 function bake_version () {
   echo "$BAKE_VERSION"
 }
 
 function bake_update () {
-  if [ ! -d "$HOME/.bake/packages" ]; then
+  if [[ ! -d "$HOME/.bake/packages" ]]; then
     bake_echo_yellow "No libraries found in ~/.bake, nothing to upgrade"
     exit 0
   fi
@@ -502,115 +614,168 @@ function bake_update () {
   done
 }
 
-function bake_create_bakefile () {
-  if [ ! -e "Bakefile" ]; then
-    cat > "Bakefile" <<END
-#!/usr/bin/env bash
-
-# bake_require github.com/kyleburton/bake-recipes/docker/docker.sh
-
-bake_task get-started "Get started by editing this Bakefile"
-function get-started () {
-  if [ -n "$EDITOR" ]; then
-    "$EDITOR" Bakefile
-  else
-    vim Bakefile
-  fi
-}
-END
-  fi
-}
-
-function bake_source_bakefile() {
-  bakefile=$1
-  if [[ -d $bakefile ]]; then
-    for f in "$bakefile"/*; do
-      bake_source_bakefile "$f"
-    done
-  else
-    source "$bakefile"
-  fi
-}
-
-function bake_run () {
-  local task="${1:-}"
-  if [ -n "$task" ]; then
-    shift
-  fi
-
-  local bakefile
-  bakefile="$(bake_find_bakefile)"
-
-  if [ ! -e "$bakefile" ]; then
-    if [ "$task" == "version" ]; then
+# Handler for all non-task bake operations
+function bake_internal_command () {
+  local cmd="$1"
+  shift
+  case "$cmd" in
+    version)
       bake_version
-      return 0
-    fi
-
-    if [ "$task" == "upgrade" ]; then
+      ;;
+    upgrade)
       bake_upgrade
-      return 0
-    fi
-
-    if [ "$task" == "init" ]; then
+      ;;
+    update)
+      bake_update
+      ;;
+    init)
       bake_create_bakefile
-      return 0
-    fi
+      ;;
+    print-def)
+      bake_print_def "$@"
+      ;;
+    lib)
+      bake_print_lib "$@"
+      ;;
+    *)
+      bake_log_fatal "Unknown internal command $cmd"
+      return 1
+      ;;
+  esac
+}
 
-    echo "Error[bake_run]: could not locate a Bakefile!"
-    echo ""
-    bake_inernal_help
+# Entrypoint for bake.
+function bake_run () {
+  while [[ "${1:-}" == -* ]]; do
+    local opt="$1"
+    case "$opt" in
+      -c|--command)
+        local cmd="${2:-}"
+        if [[ -z "$cmd" ]]; then
+          bake_log_fatal "Option $opt requires an argument"
+          return 1
+        fi
+        shift 2
+        bake_internal_command "$cmd" "$@"
+        return
+        ;;
+      -f|--bakefile)
+        local bakefile="${2:-}"
+        if [[ -z "$bakefile" ]]; then
+          bake_log_fatal "Option $opt requires an argument"
+          return 1
+        fi
+        shift 2
+        BAKEFILE="$bakefile"
+        ;;
+      -d|--debug)
+        BAKE_DEBUG_MODE="1"
+        shift
+        ;;
+      -x|--complete)
+        local task="${2:-}"
+        if [[ -z "$task" ]]; then
+          return 1
+        fi
+        shift 2
+        bake_find_bakefile
+        bake_load_cachefile
+        bake_source_bakefile_once
+        if ! bake_is_registered_task "$task"; then
+          return 1
+        fi
+        local complete_fn
+        complete_fn="_bake_complete_$(bake_task_function "$task")"
+        if ! declare -F "$complete_fn" >/dev/null; then
+          compgen -o default -- "$*"
+          return
+        fi
+        "$complete_fn" "$@"
+        return
+        ;;
+      --tasks)
+        shift
+        bake_find_bakefile
+        bake_load_cachefile
+        for task in "${BAKE_TASKS[@]}"; do
+          echo "$task"
+        done
+        return
+        ;;
+      -h|--help)
+        shift
+        bake_help
+        return
+        ;;
+      *)
+        echo "unknown option: $opt"
+        return 1
+        ;;
+    esac
+  done
+
+  bake_find_bakefile
+  bake_load_cachefile
+
+  if [[ -z "$*" ]]; then
+    bake_task_help "$@"
     return 1
   fi
 
-  export BAKEFILE="$bakefile"
-  bake_source_bakefile "$bakefile"
-
-  if [ -n "$task" ]; then
-    if bake_is_registered_task "$task"; then
-      $task "$@"
-      exit $?
-    fi
-    # TODO: if it's a supertask and no subtask exists, show help for the supertask
-    if bake_is_registered_supertask "$task"; then
-      if [ -n "${1:-}" ]; then
-        local tname="$task-$1"
-        shift
-        if bake_is_registered_task "$tname"; then
-          $tname "$@"
-          exit $?
-        fi
-      fi
-    fi
-  fi
-
-  if [ -n "$BAKE_DEFAULT_TASK" ]; then
-    "$BAKE_DEFAULT_TASK"
-    exit $?
-  fi
-
-  if [ "$task" == upgrade ]; then
-    bake_upgrade
-    return 0
-  fi
-
-  if [ "$task" == "update" ]; then
-    bake_update
-    return 0
-  fi
-
-  bake_bakefile_help "$task"
-  exit 1
+  bake_source_bakefile_once
+  bake_call_task "$@"
 }
 
-# detect if we're being run or sourced
-# from: http://stackoverflow.com/questions/2683279/how-to-detect-if-a-script-is-being-sourced
-function bake_is_main () {
-  test "${FUNCNAME[1]}" = "main"
+function bake_help () {
+  echo "Pure bash automation tool. b[ash] [m]ake"
+  echo "Tasks are taken from the file Bakefile (or bakefile) in the PWD."
+  echo ""
+  echo "USAGE:"
+  echo "    $0 [options] [task]"
+  echo ""
+  echo "ENVIRONMENT OPTIONS:"
+  echo "    BAKEFILE=\"my.Bakefile\"         Set an alternate Bakefile"
+  echo "    BAKE_LOG_LEVEL=\"5\"             Set the log level for bake (1=fatal, 5=debug)"
+  echo "    BAKEPATH=\"~/my.bake.scripts/\"  Colon delimited path for looking up files used by bake_require"
+  echo ""
+  echo "OPTIONS:"
+  echo "    -c, --command <command>  Execute interal bake command"
+  echo "    -h, --help               Print this help message"
+  echo "    -d, --debug              Execute bake in debug mode, allowing for the execution of non bake task functions"
+  echo "    --complete <task>        Print completions for task"
+  echo ""
+  echo "The interal commands (-c, --command) that bake supports are:"
+  echo "    init        Creates a skeleton Bakefile"
+  echo "    update      Updates libraries (see ~/.bake)."
+  echo "    upgrade     Refreshes bake itself."
+  echo "    version     Show the version of bake!"
+  echo ""
+  echo "EXPOSED FUNCTIONS:"
+  echo "    bake_task <name> [description]                   Expose the function with <name> as a task"
+  echo "    bake_task_alias <name> <fn_name> [description]   Expose the function <fn_name> as task <name>"
+  echo "    bake_echo_xxxx <message>                         Print <message> in color denoted by xxxx"
+  echo "    bake_log_xxxx <message>                          Conditionally log message (depending on BAKE_LOG_LEVEL)"
+}
+
+function bake_task_help () {
+  local unknown_task="${1:-}"
+  echo ""
+  echo "$0 [options] task [arg ...]"
+  echo "$0 --help"
+  echo ""
+  if [[ -n "$unknown_task" ]]; then
+    if ! bake_show_matching_tasks "$unknown_task"; then
+      bake_show_all_tasks
+    fi
+  else
+    bake_show_all_tasks
+  fi
+
+  echo ""
 }
 
 function bake_init () {
-  if [ -t 1 ]; then
+  if [[ -t 1 ]]; then
     # shellcheck disable=SC2034
     BAKE_STDOUT_IS_TERMINAL="yes"
     BAKE_COLOR_NORMAL="\\e[00m"
@@ -630,6 +795,16 @@ function bake_init () {
   fi
 }
 
+##################################
+# Colors & Logging
+##################################
+
+# detect if we're being run or sourced
+# from: http://stackoverflow.com/questions/2683279/how-to-detect-if-a-script-is-being-sourced
+function bake_is_main () {
+  test "${FUNCNAME[1]}" = "main"
+}
+
 function bake_color_echo () {
   local color="$1"
   local opts="-e"
@@ -638,7 +813,7 @@ function bake_color_echo () {
     opts="$opts $1"
     shift
   done
-  echo "$opts" " " "${color}$*${BAKE_COLOR_NORMAL}"
+  echo "$opts" "${color}$*${BAKE_COLOR_NORMAL}"
 }
 
 function bake_echo_red      () {
@@ -695,32 +870,32 @@ function bake_echo_dgray    () {
 
 
 function bake_log_debug () {
-  if [ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_DEBUG" ]; then
-    echo "[DEBUG ${FUNCNAME[1]}] $*"
+  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_DEBUG" ]]; then
+    echo "[DEBUG ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
 function bake_log_info () {
-  if [ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_INFO" ]; then
-    echo "[INFO ${FUNCNAME[1]}] $*"
+  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_INFO" ]]; then
+    echo "[INFO ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
 function bake_log_warn () {
-  if [ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_WARN" ]; then
-    echo "[WARN ${FUNCNAME[1]}] $*"
+  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_WARN" ]]; then
+    echo "[WARN ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
 function bake_log_error () {
-  if [ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_ERROR" ]; then
-    echo "[ERROR ${FUNCNAME[1]}] $*"
+  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_ERROR" ]]; then
+    echo "[ERROR ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
 function bake_log_fatal () {
-  if [ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_FATAL" ]; then
-    echo "[FATAL ${FUNCNAME[1]}] $*"
+  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_FATAL" ]]; then
+    echo "[FATAL ${FUNCNAME[1]}] $*" > "$BAKE_LOG_DEST"
   fi
 }
 
@@ -747,6 +922,10 @@ function bake_log_level () {
       ;;
   esac
 }
+
+##################################
+# Entrypoint
+##################################
 
 bake_init
 
