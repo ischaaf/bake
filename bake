@@ -742,7 +742,7 @@ function bake_run () {
         shift
         bake_find_bakefile
         bake_load_cachefile
-        for task in "${BAKE_TASKS[@]}"; do
+        for task in "${!BAKE_TASKS[@]}"; do
           echo "$task"
         done
         return
