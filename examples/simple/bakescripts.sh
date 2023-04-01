@@ -2,7 +2,7 @@
 set -eu -o pipefail
 
 
-bake_task external.func "External Function"
+@bake_task "External Function"
 function external.func () {
   echo "This came from another file!"
 }
