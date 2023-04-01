@@ -3,24 +3,36 @@ set -eu -o pipefail
 
 bake_require bakescripts.sh
 
-bake_task task.1 "simple task"
+bake_log_level debug
+
+BAKE_OPT_LOG_DEBUG_COLOR="$BAKE_COLOR_DGRAY"
+BAKE_OPT_LOG_INFO_COLOR="$BAKE_COLOR_NORMAL"
+BAKE_OPT_LOG_WARN_COLOR="$BAKE_COLOR_YELLOW"
+BAKE_OPT_LOG_ERROR_COLOR="$BAKE_COLOR_LRED"
+BAKE_OPT_LOG_FATAL_COLOR="$BAKE_COLOR_RED"
+
+@bake_task "simple task"
 function task.1 () {
-  echo "you ran a task!"
+  bake_log_debug "you ran a task!"
+  bake_log_info "you ran a task!"
+  bake_log_warn "you ran a task!"
+  bake_log_error "you ran a task!"
+  bake_log_fatal "you ran a task!"
 }
 
-bake_task task.2 "pass me some args"
-function task.2 () {
+@bake_task "pass me some args"
+function task.2 {
   echo "You passed: $*"
 }
 
-bake_task remove.bakefile "move the bakefile to test when no file exists"
-function remove.bakefile () {
+@bake_task "move the bakefile to test when no file exists"
+remove.bakefile () {
   echo "To restore Bakefile run:"
   echo "mv Bakefile{.bak,}"
   mv Bakefile{,.bak}
 }
 
-bake_task my.func!
+@bake_task my.func!
 function my.func! () {
   bake_echo_green "foo"
 }

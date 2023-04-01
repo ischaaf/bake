@@ -134,6 +134,17 @@ function bake_require_all () {
 }
 
 # bake_task taskname ["description"]
+function @bake_task () {
+  local fnline name
+  fnline=$((${BASH_LINENO[0]}+1))
+  name="$(sed "${fnline}q;d" "${BASH_SOURCE[1]}" | sed -e 's/^function //' -e 's/()//' -e 's/{//' | awk '{$1=$1};1')"
+
+  local short_desc="${1:-No Description for task: $name}"
+  BAKE_TASKS[$name]="$name"
+  BAKE_TASK_DESCRIPTIONS[$name]="$short_desc"
+}
+
+# bake_task taskname ["description"]
 function bake_task () {
   local name="${1:-}"
   local short_desc="${2:-No Description for task: $name}"
@@ -916,80 +927,46 @@ function bake_echo_dgray    () {
   bake_color_echo "$BAKE_COLOR_DGRAY" "$*"
 }
 
+function bake_log_internal () {
+  local levelname level threshold color
+  levelname="$1"
+  level="$2"
+  color="$3"
+  shift 3
 
-function bake_log_debug () {
-  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_DEBUG" ]]; then
+  if [[ "$BAKE_LOG_LEVEL" -ge "$level" ]]; then
     local source_line=
     if [[ "$BAKE_OPT_LOG_LINES" == 1 ]]; then
       source_line=" (${BASH_SOURCE[1]}:${BASH_LINENO[0]})"
     fi
-    local statement="[DEBUG ${FUNCNAME[1]}$source_line] $*"
-    if [[ -n "$BAKE_OPT_LOG_DEBUG_COLOR" ]]; then
-      bake_color_echo "$BAKE_OPT_LOG_DEBUG_COLOR" "$statement" > "$BAKE_LOG_DEST"
+    local statement="[$levelname ${FUNCNAME[1]}$source_line] $*"
+    if [[ -n "$color" ]]; then
+      bake_color_echo "$color" "$statement" > "$BAKE_LOG_DEST"
     else
       echo "$statement" > "$BAKE_LOG_DEST"
     fi
   fi
+}
+
+
+function bake_log_debug () {
+  bake_log_internal DEBUG "$BAKE_LOG_LEVEL_DEBUG" "$BAKE_OPT_LOG_DEBUG_COLOR" "$*"
 }
 
 function bake_log_info () {
-  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_INFO" ]]; then
-    local source_line=
-    if [[ "$BAKE_OPT_LOG_LINES" == 1 ]]; then
-      source_line=" (${BASH_SOURCE[1]}:${BASH_LINENO[0]})"
-    fi
-    local statement="[INFO  ${FUNCNAME[1]}$source_line] $*"
-    if [[ -n "$BAKE_OPT_LOG_INFO_COLOR" ]]; then
-      bake_color_echo "$BAKE_OPT_LOG_INFO_COLOR" "$statement" > "$BAKE_LOG_DEST"
-    else
-      echo "$statement" > "$BAKE_LOG_DEST"
-    fi
-  fi
+  bake_log_internal INFO "$BAKE_LOG_LEVEL_INFO" "$BAKE_OPT_LOG_INFO_COLOR" "$*"
 }
 
 function bake_log_warn () {
-  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_WARN" ]]; then
-    local source_line=
-    if [[ "$BAKE_OPT_LOG_LINES" == 1 ]]; then
-      source_line=" (${BASH_SOURCE[1]}:${BASH_LINENO[0]})"
-    fi
-    local statement="[WARN  ${FUNCNAME[1]}$source_line] $*"
-    if [[ -n "$BAKE_OPT_LOG_WARN_COLOR" ]]; then
-      bake_color_echo "$BAKE_OPT_LOG_WARN_COLOR" "$statement" > "$BAKE_LOG_DEST"
-    else
-      echo "$statement" > "$BAKE_LOG_DEST"
-    fi
-  fi
+  bake_log_internal WARN "$BAKE_LOG_LEVEL_WARN" "$BAKE_OPT_LOG_WARN_COLOR" "$*"
 }
 
 function bake_log_error () {
-  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_ERROR" ]]; then
-    local source_line=
-    if [[ "$BAKE_OPT_LOG_LINES" == 1 ]]; then
-      source_line=" (${BASH_SOURCE[1]}:${BASH_LINENO[0]})"
-    fi
-    local statement="[ERROR ${FUNCNAME[1]}$source_line] $*"
-    if [[ -n "$BAKE_OPT_LOG_ERROR_COLOR" ]]; then
-      bake_color_echo "$BAKE_OPT_LOG_ERROR_COLOR" "$statement" > "$BAKE_LOG_DEST"
-    else
-      echo "$statement" > "$BAKE_LOG_DEST"
-    fi
-  fi
+  bake_log_internal ERROR "$BAKE_LOG_LEVEL_ERROR" "$BAKE_OPT_LOG_ERROR_COLOR" "$*"
 }
 
 function bake_log_fatal () {
-  if [[ "$BAKE_LOG_LEVEL" -ge "$BAKE_LOG_LEVEL_FATAL" ]]; then
-    local source_line=
-    if [[ "$BAKE_OPT_LOG_LINES" == 1 ]]; then
-      source_line=" (${BASH_SOURCE[1]}:${BASH_LINENO[0]})"
-    fi
-    local statement="[FATAL ${FUNCNAME[1]}$source_line] $*"
-    if [[ -n "$BAKE_OPT_LOG_FATAL_COLOR" ]]; then
-      bake_color_echo "$BAKE_OPT_LOG_FATAL_COLOR" "$statement" > "$BAKE_LOG_DEST"
-    else
-      echo "$statement" > "$BAKE_LOG_DEST"
-    fi
-  fi
+  bake_log_internal FATAL "$BAKE_LOG_LEVEL_FATAL" "$BAKE_OPT_LOG_FATAL_COLOR" "$*"
 }
 
 function bake_log_level () {
