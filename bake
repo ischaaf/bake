@@ -67,9 +67,6 @@ export BAKE_OPT_LOG_WARN_COLOR="${BAKE_OPT_LOG_WARN_COLOR:-}"
 export BAKE_OPT_LOG_ERROR_COLOR="${BAKE_OPT_LOG_ERROR_COLOR:-}"
 export BAKE_OPT_LOG_FATAL_COLOR="${BAKE_OPT_LOG_FATAL_COLOR:-}"
 
-# Bake task tracking
-BAKE_PACKAGES_PATH="$HOME/.bake/packages"
-
 function bake_reset_task_variables () {
   unset BAKE_TASKS
   unset BAKE_TASK_DESCRIPTIONS
@@ -307,7 +304,7 @@ function bake_package_install () {
   local schema=${url%%://*}
 
   if ! command -v git > /dev/null; then
-   bake_echo_red "Error[bake_package_install] git command not found in PATH" EXIT
+   bake_log_error "git command not found in PATH" EXIT
    exit 1
   fi
 
@@ -324,12 +321,12 @@ function bake_package_install () {
     bake_library_file=${BASH_REMATCH[3]}
 
   if [[ -z "$git_host_and_user" ]] || [[ -z "$git_project_name" ]]; then
-    bake_echo_red "Error[bake_package_install] Could not parse url '$url'"
+    bake_log_error "Could not parse url '$url'"
     exit 1
   fi
 
   if [[ -z "$bake_library_file" ]]; then
-    bake_echo_red "Error[bake_package_install] No library file specified"
+    bake_log_error "No library file specified"
     exit 1
   fi
 
@@ -814,6 +811,7 @@ function bake_help () {
   echo "    version     Show the version of bake!"
   echo ""
   echo "EXPOSED FUNCTIONS:"
+  echo "    @bake_task [description]                         Expose the function defined on the next line as a task"
   echo "    bake_task <name> [description]                   Expose the function with <name> as a task"
   echo "    bake_task_alias <name> <fn_name> [description]   Expose the function <fn_name> as task <name>"
   echo "    bake_echo_xxxx <message>                         Print <message> in color denoted by xxxx"
