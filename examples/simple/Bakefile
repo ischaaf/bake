@@ -44,3 +44,9 @@ function _bake_complete_task.2 () {
 function _bake_complete_task.1 () {
   get_completions docker "$@"
 }
+
+@bake_task
+function this.is.a.really.long.task.name () {
+  bake_echo_green "foo"
+}
+
