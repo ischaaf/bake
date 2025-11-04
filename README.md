@@ -6,26 +6,19 @@ Pure bash build framework.  No libraries, no dependencies (in this framework).  
 
 The API follows in the spirit of Ruby's amazing and wonderful Rake utility.
 
+## This fork vs the original
+As a whole this fork strives to maintain the spirit of the original Bake, but with a number of
+(IMO) quality of life improvements. If you happen to have found your way here as an existing
+Bake user, then neat, your bake files should still work as before. Though I don't believe there
+is anything super special here that makes this implementation worth going out of your way to
+migrate to.
+
 ## Installation
 
-### Via [`homebrew`](http://brew.sh/) or [`linuxbrew`](http://linuxbrew.sh/)
-
-I (Kyle Burton) have a custom [brew tap](https://github.com/kyleburton/homebrew-kyleburton), to use it to install `bake` do the following on a system where you already have `brew` installed:
-
-```sh
-brew tap --full github/kyleburton https://github.com/kyleburton/homebrew-kyleburton.git
-
-# recommended on OS X (bake depends on versions of bash that support arrays)
-brew install kyleburton/kyleburton/bake
-
-# recommended on Linux (Linux already has a good bash)
-brew install github/kyleburton/bake --without-bash
-```
-
-### Manual
+### Manual (For this fork, that's all you get)
 
     test -d $HOME/bin || mkdir $HOME/bin
-    curl https://raw.githubusercontent.com/kyleburton/bake/master/bake > $HOME/bin/bake
+    curl https://raw.githubusercontent.com/ischaaf/bake/master/bake > $HOME/bin/bake
     chmod 755 $HOME/bin/bake
 
 NOTE: OS X (the Apple Mac) has been regressing its version of bash.  Newer (as of 2016) versions of OS X have a bash that `bake` is incompatible with.  `bake` uses (arrays)[http://tldp.org/LDP/Bash-Beginners-Guide/html/sect_10_02.html], which very old versions of `bash` do not support.  You can easily install a modern supported version of bash via [homebrew](http://brew.sh/) and then either [set it as your shell](http://johndjameson.com/blog/updating-your-shell-with-homebrew/) or change the first line of the `bake` script to point to the bash you installed via homebrew.
@@ -35,7 +28,7 @@ NOTE: OS X (the Apple Mac) has been regressing its version of bash.  Newer (as o
 You can have `bake` create a skeleton `Bakefile` in your current working directory by running:
 
 ```sh
-bake init
+bake -c init
 ```
 
 ## Lets Make Your first `Bakefile`!
@@ -81,6 +74,11 @@ foo: args='this that'
 ### `bake_task task-name "task-description"`
 
 This registers a task and its description so it can be executed and help can be displayed.
+
+### `@bake_task "task-description"`
+
+This must be used on the line directly before a function definition.
+This registers the function on the next line as a bake task
 
 ### `bake_default_task task-name`
 
